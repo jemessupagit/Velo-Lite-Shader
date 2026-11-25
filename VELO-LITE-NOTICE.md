@@ -6,7 +6,7 @@ Velo-Lite Shader v1.0.0b (beta) is a community derivative and is not an official
 
 - Original MakeUp - Ultra Fast creator: Javier Garduño. Project: https://github.com/javiergcim/MakeUpUltraFast
 - E-LITE shaders creator/editor/translator: Entokito. Project: https://github.com/EntokitoDezonze/E-LITE-shaders
-- Velo-Lite modifications: Super Gug, 2026.
+- Velo-Lite modifications: James, 2026.
 - Original upstream code, files, names, textures and notices are retained. The Velo-Lite author states that permission was obtained from the E-LITE author for this derivative; applicable upstream license conditions remain in force.
 
 ## License
