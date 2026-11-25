@@ -1,0 +1,47 @@
+/* MakeUp - E-LITE shaders 5 - luma.glsl
+Luma related functions.
+
+Javier Garduño - GNU Lesser General Public License v3.0
+*/
+
+float luma(vec3 color) {
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+} // Value of luminance of color.
+
+vec3 gray(vec3 color) {
+    float luma = luma(color);
+    return vec3(luma);
+} // Equivalent to saturate(color, 0.0)
+
+float colorAverage(vec3 color) {
+    return (color.r + color.g + color.b) * 0.3333333333;
+}
+vec3 saturate(vec3 color, float saturation) {
+    vec3 luma = gray(color);
+    return mix(luma, color, saturation);
+} // Apply saturation to a color based on a float, 1.0 is the default
+
+vec4 saturate_v4(vec4 color, float saturation) {
+    vec3 luma = gray(color.rgb);
+    return mix(vec4(luma, color.a), vec4(color.rgb, color.a), saturation);
+} // Same as saturate, but for vec4, designed to not affect alpha channel (transparency.)
+
+float get_sat(vec3 color) {
+    float maxC = max(max(color.r, color.g), color.b);
+    float minC = min(min(color.r, color.g), color.b);
+    return maxC - minC;
+}
+
+vec3 vibrance(vec3 color, float amount) {
+    float sat = get_sat(color);
+
+    float increase_factor = max((1.0 - sat * 3.0), 0.0) * ((amount * 1.15 - 1.0) * 2.0);
+    float final_sat = 1.0 + max(0.0, increase_factor);
+
+    return max(saturate(color, final_sat), vec3(0.0));
+}
+
+vec3 normalizeLuma(vec3 color, float targetLuma) {
+    float luma = luma(color);
+    return color * (targetLuma / max(luma, 0.0001));
+}

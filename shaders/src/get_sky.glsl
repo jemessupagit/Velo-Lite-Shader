@@ -1,0 +1,104 @@
+/* ____    __    ______________
+  / ______/ /  /  _/_  __/ __/
+ / _//___/ /___/ /  / / / _/
+/___/   /____/___/ /_/ /___/
+
+E-LITE shaders 5 - get_sky.glsl
+Sky render. - Renderização do céu.
+*/
+
+vec3 sky_color;
+
+#if AA_TYPE > 0
+    float dither = shifted_semiblue(gl_FragCoord.xy);
+#else
+    float dither = dither13(gl_FragCoord.xy);
+#endif
+dither = (dither - 0.5) * 0.03125;
+
+#if ((COLOR_SCHEME == 2 && SIMPLE_SKY == 0) || COLOR_SCHEME == 5) && !defined UNKNOWN_DIM 
+    vec2 screenCoord = gl_FragCoord.xy * vec2(pixelSizeX, pixelSizeY) * 2.0 - 1.0;
+    vec4 fragpos = gbufferProjectionInverse * vec4(screenCoord, gl_FragCoord.z, 1.0);
+    vec3 nfragpos = normalize(fragpos.xyz);
+    
+    float dotup = dot(nfragpos, up_vec);
+    float n_u = clamp(dotup + (0.1 + dither), 0.0, 1.0);
+    float blend_initial = sqrt(n_u);
+
+    float height_factor = clamp(1.0 - (cameraPosition.y / 63.0), 0.0, 1.0);
+    height_factor = pow(height_factor, 0.25);
+    float eye_brightness_scaled_val = (eyeBrightnessSmooth.y * .8 + 48.0) * 0.004166666666666667;
+    float cave_influence = height_factor * clamp(1.0 - eye_brightness_scaled_val * 0.1, 0.0, 1.0);
+    cave_influence = smoothstep(0.9, 1.0, cave_influence);
+    cave_influence = dayBF(cave_influence, cave_influence, 0.0);
+
+    const float t_mid = 0.55;
+    const float t_end = 1.0;
+
+    #include "/src/current_sky_color.glsl"
+    
+    // CONVERSION
+    current_low_sky_color = oklabToRgb(current_low_sky_color);
+    current_mid_sky_color = oklabToRgb(current_mid_sky_color);
+    current_hi_sky_color = oklabToRgb(current_hi_sky_color);
+
+    float sun_factor_offset = final_sun_factor * dayBF(0.0, 0.0, 0.1);
+    float sun_factor_sub = dayBF(0.05, 0.1, 0.05) + (final_sun_factor * dayBF(0.05, 0.05, 0.0));
+
+    current_mid_sky_color = mix(current_mid_sky_color, saturate(current_mid_sky_color * 0.1, 0.0), cave_influence) * biome_sky;
+    current_low_sky_color = mix(current_low_sky_color, saturate(current_low_sky_color * 0.1, 0.0), cave_influence) * biome_sky_low;
+    current_hi_sky_color  = mix(current_hi_sky_color,  saturate(current_hi_sky_color * 0.25, 0.5), fastpow(cave_influence, 5.0)) * biome_sky;
+
+    float pL = sun_factor_sub;
+    float pM = pL + t_mid;
+    float pH = pL + (t_mid - 0.1) + (t_end - (t_mid - 0.1)) - sun_factor_offset;
+
+    vec3 mL = (current_mid_sky_color - current_low_sky_color) / (pM - pL);
+    vec3 mH = (current_hi_sky_color  - current_mid_sky_color) / (pH - pM);
+    vec3 tM = 0.5 * (mL + mH);
+
+    float b = blend_initial;
+    float hA = pM - pL, hB = pH - pM;
+    sky_color = max((b < pM)
+        ? hermite(current_low_sky_color, current_mid_sky_color, mL, tM, clamp((b - pL) / hA, 0.0, 1.0), hA)
+        : hermite(current_mid_sky_color, current_hi_sky_color,  tM, mH, clamp((b - pM) / hB, 0.0, 1.0), hB),
+        vec3(0.0));
+        
+    vec3 sky_ground_color = current_low_sky_color * mix(saturate(vec3(1.0, 0.4, 0.2), mix(dayBF(1.0, 0.0, 1.0), 0.0, rainStrength)), vec3(1.0), rainStrength);
+    const float ground_t_start = 0.0;
+    const float ground_t_end = -0.2;
+
+    float ground_blend = smoothstep(ground_t_start, ground_t_end, dotup + dither * 0.2) * dayBF(dayBF(0.5, 0.4, 1.0), 0.4, dayBF(1.0, 0.0, 0.0));
+    sky_color = mix(sky_color, sky_ground_color, ground_blend);
+    sky_color += dither * (3.0 * luma(sky_color));
+#elif COLOR_SCHEME == 4 // Vanilla
+    vec2 screenCoord = gl_FragCoord.xy * vec2(pixelSizeX, pixelSizeY) / RENDER_SCALE * 2.0 - 1.0;
+    vec4 fragpos = gbufferProjectionInverse * vec4(screenCoord, gl_FragCoord.z, 1.0);
+    vec3 nfragpos = normalize(fragpos.xyz);
+    
+    float n_u = clamp(dot(nfragpos, up_vec) - 0.1 + dither, 0.0, 1.0);
+    float blend_initial = pow(n_u, 0.22); 
+
+    #include "/src/current_sky_color.glsl"
+    current_low_sky_color = oklabToRgb(current_low_sky_color);
+    current_hi_sky_color = oklabToRgb(current_hi_sky_color);
+
+    float t2 = smoothstep(0.0, 0.65, blend_initial - 0.2 - (final_sun_factor * dayBF(0.05, 0.05, 0.05)));
+    sky_color = mix(current_low_sky_color, current_hi_sky_color, t2);
+#else // Legacy
+    vec2 screenCoord = gl_FragCoord.xy * vec2(pixelSizeX, pixelSizeY) / RENDER_SCALE * 2.0 - 1.0;
+    vec4 fragpos = gbufferProjectionInverse * vec4(screenCoord, gl_FragCoord.z, 1.0);
+    vec3 nfragpos = normalize(fragpos.xyz);
+    
+    float n_u = clamp(dot(nfragpos, up_vec) + dither, 0.0, 1.0);
+    float blend = sqrt(sqrt(n_u));
+    sky_color = oklabToRgb(mix(low_sky_color, hi_sky_color, smoothstep(0.0, 1.0, blend)));
+#endif
+
+#ifdef GBUFFER_SKYBASIC
+    vec4 background_color = vec4(sky_color, 1.0);
+#endif
+
+#ifdef PREPARE_SHADER
+    vec3 block_color = sky_color;
+#endif

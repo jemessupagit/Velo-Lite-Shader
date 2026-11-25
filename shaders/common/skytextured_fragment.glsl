@@ -1,0 +1,117 @@
+#include "/lib/config.glsl"
+
+// == Color utils
+#ifdef THE_END
+    #include "/lib/color_utils_end.glsl"
+#elif defined NETHER
+    #include "/lib/color_utils_nether.glsl"
+#else
+    #include "/lib/color_utils.glsl"
+#endif
+
+#include "/lib/luma.glsl"
+
+// == Uniforms
+uniform sampler2D tex;
+uniform float viewWidth;
+uniform float viewHeight;
+uniform int frameCounter;
+uniform float frameTime;
+uniform vec3 sunPosition;
+uniform mat4 gbufferModelViewInverse;
+uniform mat4 gbufferProjectionInverse;
+uniform int renderStage;
+
+#ifdef THE_END
+    uniform float frameTimeCounter;
+    uniform vec3 cameraPosition;
+    
+#endif
+
+// == Varyings
+varying vec2 texcoord;
+varying vec4 tint_color;
+varying float sky_luma_correction;
+varying vec3 cursed_sky;
+varying float current_wetness;
+varying vec3 astro_world_dir;
+
+/* Utilitary functions */
+
+// == Main function
+
+void main() {
+    //if(fragment_cull()) discard;
+
+    vec3 sunDir = sunPosition * 0.01; 
+    float sunMask = step(0.0, -sunPosition.z); 
+    float moonMask = 1.0 - sunMask;
+
+    #if defined THE_END
+        vec4 block_color;
+
+        float backgroud_mul;
+        #if defined IS_IRIS && MC_VERSION >= 12109
+            backgroud_mul = 0.2;
+        #else
+            backgroud_mul = 0.5;
+        #endif
+
+        block_color = texture2D(tex, texcoord) * tint_color * backgroud_mul;
+
+    #elif defined NETHER
+        vec4 background_color_full = vec4(mix(fogColor * 0.1, vec3(1.0), 0.04), 1.0);
+        vec3 background_color = background_color_full.rgb;
+        vec4 block_color = vec4(background_color, 1.0);
+    #else
+        vec4 block_color = texture2D(tex, texcoord) * tint_color;
+
+        float frag_elevation = normalize(astro_world_dir).y;
+        float horizon_fade = smoothstep(-0.1, 0.0, frag_elevation);
+        if (horizon_fade < 0.001) { discard; return; }
+
+
+        float day_blend_val;
+        #ifdef IS_IRIS
+            if(renderStage == MC_RENDER_STAGE_SUN){
+                day_blend_val = dayBFlgcy(3.0, 1.0, dayBF(3.0, 1.0, 1.0));
+            } else if (renderStage == MC_RENDER_STAGE_MOON){
+                day_blend_val = max(dayBF(-5.0, 0.0, dayBF(-5.0, 0.0, 17.0)), 2.0);
+            }
+        #else
+            day_blend_val = max(dayBF(3.0, 1.0, dayBF(0.0, 0.0, 17.0)), 0.0);
+        #endif
+
+        
+        #ifndef CUSTOM_SKYFIX
+            #if ROUND_SUN < 2
+                if(any(lessThan(mix(vec3(1.0), block_color.rgb, sunMask), vec3(0.2)))) { discard; return; }
+            #endif
+            block_color.rgb *= sky_luma_correction * current_wetness * day_blend_val;
+            #if COLOR_SCHEME == 4 && !defined SIMPLE_AUTOEXP
+                block_color.rgb *= dayBF(1.0, 1.5, sqrt(luma(block_color.rgb) * 0.5));
+            #elif COLOR_SCHEME == 4 && defined SIMPLE_AUTOEXP
+                block_color.rgb *= dayBF(1.0, 1.5, sqrt(luma(block_color.rgb) * 3));
+            #else
+                block_color.rgb *= dayBlend(block_color.rgb, block_color.rgb, sqrt(block_color.rgb));
+            #endif
+
+            #if COLOR_SCHEME == 4 && defined SIMPLE_AUTOEXP
+                block_color.rgb = pow(block_color.rgb, vec3(ASTRO_POWER * dayBF(1.0, 1.0, 0.6)));
+            #else
+                block_color.rgb = pow(block_color.rgb, vec3(ASTRO_POWER));
+            #endif
+            
+            #if COLOR_SCHEME == 5
+                block_color.rgb *= cursed_sky;
+            #endif
+        #else
+            block_color.rgb = saturate(block_color.rgb, dayBF(0.75, 1.0, 0.5)) * dayBF(0.5, 1.0, 0.15);
+        #endif
+
+        block_color.rgb *= horizon_fade;
+        block_color.a *= horizon_fade;
+    #endif
+
+    #include "/src/writebuffers.glsl"
+}
